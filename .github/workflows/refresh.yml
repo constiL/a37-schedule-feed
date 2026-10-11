@@ -1,0 +1,55 @@
+name: Refresh schedule
+
+# Every 3 hours. GitHub's cron is UTC and runs late under load, which is fine: nothing
+# downstream assumes an exact time, and the page shows the real "generated" stamp out of
+# the file rather than an assumed cadence.
+on:
+  schedule:
+    - cron: '0 */3 * * *'
+  workflow_dispatch:        # run by hand right after a timetable change
+
+concurrency:
+  group: refresh-schedule
+  cancel-in-progress: false
+
+permissions:
+  contents: write           # the job commits schedule.json back to this repo
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the Eversports feed
+        env:
+          # SECRET, set once with:
+          #   gh secret set EVERSPORTS_ICS_TOKEN --repo <owner>/a37-schedule-feed
+          # It is not in any file here and never reaches schedule.json or a log line.
+          EVERSPORTS_ICS_TOKEN: ${{ secrets.EVERSPORTS_ICS_TOKEN }}
+        run: python3 parse-ics.py > schedule.next.json
+
+      - name: Check it, and decide whether anything changed
+        id: check
+        run: |
+          set +e
+          python3 check.py schedule.next.json schedule.json
+          code=$?
+          set -e
+          if [ "$code" = "1" ]; then exit 1; fi
+          echo "changed=$([ "$code" = "0" ] && echo yes || echo no)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        if: steps.check.outputs.changed == 'yes'
+        run: |
+          set -euo pipefail
+          mv schedule.next.json schedule.json
+          git config user.name  "a37-schedule-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add schedule.json
+          git commit -m "schedule: $(python3 -c 'import json;d=json.load(open("schedule.json"));print("%d classes, %s to %s" % (d["count"], d["from"], d["to"]))')"
+          git push
+
+      - name: Clean up
+        if: always()
+        run: rm -f schedule.next.json
