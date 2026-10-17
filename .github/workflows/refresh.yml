@@ -1,11 +1,18 @@
 name: Refresh schedule
 
-# Every 3 hours. GitHub's cron is UTC and runs late under load, which is fine: nothing
-# downstream assumes an exact time, and the page shows the real "generated" stamp out of
-# the file rather than an assumed cadence.
+# Every 2 hours at :23 past. Cron is UTC. Nothing downstream assumes an exact time, and the
+# page shows the real "generated" stamp out of the file rather than an assumed cadence.
+#
+# ⚠ ASKED FOR EVERY 2 HOURS, EXPECT MORE LIKE 3 TO 4. GitHub delays scheduled runs under load
+# and DROPS them outright, it does not queue them. Measured on the previous '0 */3 * * *'
+# setting over three days: asked for 8 runs a day, got 4 to 5, with gaps of 2h36 up to 7h08
+# and not one failed run. So the interval was halved to 2h to leave room for the drops, and
+# moved off :00, which is the most congested minute on the platform because everyone writes
+# it. Do NOT "fix" a long gap by shortening this further: the limit is GitHub's scheduler,
+# not this number. The honest reading is always the generated stamp in schedule.json.
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '23 */2 * * *'
   workflow_dispatch:        # run by hand right after a timetable change
 
 concurrency:
