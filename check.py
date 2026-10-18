@@ -35,8 +35,12 @@ def main():
 
     # Every class needs the fields the page patches on, or the page's own validation drops the
     # whole file and the fetch was pointless.
+    # ⚠ TEACHER IS NOT IN THIS LIST, deliberately (2026-10-18). An unstaffed class has no teacher
+    # and is still real, so refusing the file over one would mean publishing nothing at all. The
+    # page's own validator was relaxed to match IN THE SAME CHANGE; a page pasted before that still
+    # drops the whole file on an empty teacher, so THE PAGE GOES LIVE FIRST, then this.
     for c in classes:
-        for k in ("uid", "date", "time", "name", "teacher"):
+        for k in ("uid", "date", "time", "name"):
             if not c.get(k):
                 sys.exit("REFUSING: a class is missing %r: %r" % (k, c))
         if not (len(c["uid"]) == 36 and c["date"][4] == "-" and ":" in c["time"]):
