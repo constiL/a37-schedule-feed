@@ -25,6 +25,12 @@ FEED = "https://app.eversportsmanager.com/public/scheduler/ics?token={token}&sco
 # name with a middot, so it is stripped here exactly as build-schedule-data.py strips it.
 LANG = re.compile(r"\s*·\s*(DE/ENG|DE/EN|DE|ENG|EN)\s*$")
 SUMMARY = re.compile(r"^(?P<name>.+?)\s+@\s+.*?\s+by\s+(?P<teacher>.+?)\s*$")
+# ⚠ A CLASS WITH NO TEACHER YET IS STILL A REAL, BOOKABLE CLASS and must be published (owner
+# 2026-10-18: "nothing should get skipped"). Eversports writes "HOT GLOW™ @ Alchemy37 Studio" with
+# no "by ..." while a slot is unstaffed, which the regex above cannot match. Skipping those made the
+# page DELETE them, because the page reads absence from this file as a cancellation. Measured on
+# 2026-10-18: 2 inside the feed window, 5 across November.
+SUMMARY_NO_TEACHER = re.compile(r"^(?P<name>.+?)\s+@\s+.+?\s*$")
 
 
 def unfold(text):
@@ -84,8 +90,11 @@ def build(ev, skipped):
     if not (uid and start and summary):
         skipped.append(("missing field", summary or uid)); return None
     m = SUMMARY.match(summary)
+    teacher = m.group("teacher").strip() if m else ""
     if not m:
-        skipped.append(("unparsed summary", summary)); return None
+        m = SUMMARY_NO_TEACHER.match(summary)
+        if not m:
+            skipped.append(("unparsed summary", summary)); return None
     s = parse_dt(start)
     mins = int((parse_dt(end) - s).total_seconds() // 60) if end else None
     return {
@@ -94,7 +103,7 @@ def build(ev, skipped):
         "time": s.strftime("%H:%M"),
         "mins": mins,
         "name": LANG.sub("", m.group("name").strip()).strip(),
-        "teacher": m.group("teacher").strip(),
+        "teacher": teacher,
         "cancelled": ev.get("STATUS", "").strip().upper() == "CANCELLED",
     }
 
