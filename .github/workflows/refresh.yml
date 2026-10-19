@@ -53,9 +53,36 @@ jobs:
           mv schedule.next.json schedule.json
           git config user.name  "a37-schedule-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add schedule.json
-          git commit -m "schedule: $(python3 -c 'import json;d=json.load(open("schedule.json"));print("%d classes, %s to %s" % (d["count"], d["from"], d["to"]))')"
-          git push
+
+          # ⚠ RETRY AROUND A STALE CHECKOUT, OR A DOUBLE FIRE EMAILS A FAILURE FOR NOTHING.
+          # GitHub fired this schedule TWICE on 2026-10-19, 8 seconds apart. `concurrency` queued the
+          # second run rather than cancelling it, so it ran with a checkout from before the first
+          # run's commit and its push was rejected: "! [rejected] master -> master (fetch first)".
+          # Both runs had computed the same 300 classes, so nothing was wrong with the data, but the
+          # job went red and sent a failure email.
+          # Resetting onto the remote and re-applying the file is safe BECAUSE schedule.json IS
+          # GENERATED: there is no local work to preserve and no merge to resolve, the freshest copy
+          # simply wins. `git pull --rebase` would be the wrong tool, it would try to replay a commit
+          # whose only content is a whole-file rewrite and stop on a conflict.
+          new=$(mktemp)
+          cp schedule.json "$new"
+          for attempt in 1 2 3; do
+            git add schedule.json
+            if git diff --cached --quiet; then
+              echo "publish: identical to what is already on master, nothing to do"
+              exit 0
+            fi
+            git commit -q -m "schedule: $(python3 -c 'import json;d=json.load(open("schedule.json"));print("%d classes, %s to %s" % (d["count"], d["from"], d["to"]))')"
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected, attempt $attempt: rebuilding on top of the remote"
+            git fetch origin master
+            git reset --hard origin/master
+            cp "$new" schedule.json
+          done
+          echo "could not publish after 3 attempts"
+          exit 1
 
       - name: Clean up
         if: always()
